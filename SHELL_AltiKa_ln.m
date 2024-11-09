@@ -85,7 +85,7 @@ t_sub = 5;
 
 % Parameters of synthetic topography
 topo_type = 2; % type of surface: 1 = Gaussian, 2 = lognormal, 3 = fractal
-l_surf = 20; % large-scale correlation length (default = 5 m)
+l_surf = 5; % large-scale correlation length (default = 5 m)
 dx = 5; % resolution of grid for deriving the distribution of surface slopes, m (default = 1 m)
 
 % Antenna Geometry
