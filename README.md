@@ -9,7 +9,7 @@ This is done through the integration of the flat-surface impulse response with t
 
 The 2D model also accounts for the radar electromagnetic bias, which is included directly within the 3D version of the model but is typically ignored in most analytical/semianalytical models for the SAR altimeter echo which assume Gaussian topography. In the case of surfaces with non-Gaussian height distribution, the surface height and slope can be correlated, invalidating the assumption that all portions of the surface height distribution produce identical backscatter responses. This is accounted for here by weighting the height distribution for the backscatter contribution as a function of slope, i.e. if the probability of a certain slope is more likely for a certain bin of the height distribution, the surface backscatter response is weighted for that probability. An estimate for the radar EM bias is provided as a model result and mainly depends on the large-scale distribution of surface slopes, i.e. ~sigma_surf/l_surf, and the radar-scale roughness [sigma_si, l_si] or [sigma_s, l_s].
 
-The tradeoff between accuracy and spped of the 2D numerical integration of the FSIR, transmitted echo and backscatter response, can be tuned with the 'abstol','reltol', and 'MaxFunEvals' settings of quad2d.
+The tradeoff between accuracy and speed of the 2D numerical integration of the FSIR, transmitted echo and backscatter response, can be tuned with the 'abstol','reltol', and 'MaxFunEvals' settings of quad2d.
 
 The 2D model is set up to simulate single-look echoes of a SAR echo in parallel; however, for simulating pulse-limited LRM echoes, the parallel processing can be performed on one of the loops in SHELL_* instead, to improve performance.
 
