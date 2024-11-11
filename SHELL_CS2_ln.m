@@ -121,7 +121,7 @@ for i = 1:length(sigma_si)
         
         fprintf(['Simulation ' num2str((length(sigma_surf_si)*(i-1) + j)) '/' num2str(length(sigma_si)*length(sigma_surf_si)) '\n']);
         
-        [P_t_full,P_t_ml,P_t_full_comp,P_t_ml_comp,em_bias] = Facet_Echo_Model_2D(op_mode,lambda,bandwidth,P_T,h,v,pitch,roll,prf,beam_weighting,G_0,D_0,gamma1,gamma2,N_b,t,sigma_0_snow_surf,sigma_0_snow_vol,kappa_e,tau_snow,c_s,h_s,sigma_0_ice_surf,sigma_surf_s,sigma_surf_si(j),l_surf,H_surf,topo_type,dx);
+        [P_t_full,P_t_ml,P_t_full_comp,P_t_ml_comp,em_bias] = Facet_Echo_Model_2D(op_mode,lambda,bandwidth,P_T,h,v,pitch,roll,prf,beam_weighting,G_0,D_0,gamma1,gamma2,N_b,t,sigma_0_snow_surf,sigma_0_snow_vol,kappa_e,tau_snow,c_s,h_s,sigma_0_ice_surf,sigma_surf_s(j),sigma_surf_si(j),l_surf,topo_type,dx);
         
         P_t_full_range{i,j} = P_t_full;
         P_t_ml_range{i,j} = P_t_ml;
