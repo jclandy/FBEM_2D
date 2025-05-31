@@ -116,7 +116,7 @@ end
 %% Sigma0 functions
 
 % Slope distribution std dev from random statistical surface
-[x,y,z] = synthetic_topo_shell(1,topo_type,sigma_surf_si,l_surf,dx);
+[x,y,z] = synthetic_topo_shell(1,topo_type,sigma_surf_si,l_surf,0,dx);
 
 [FX,FY] = gradient(z,x(1,:),y(:,1));
 S = atan(sqrt(FX.^2 + FY.^2));
