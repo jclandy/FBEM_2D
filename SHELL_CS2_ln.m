@@ -78,7 +78,7 @@ N_tb = 100; % (default = 70)
 % Range bin at mean scattering surface, i.e. time = 0
 t_0 = 20; % (default = 15)
 
-% Time oversampling factor
+% Time oversampling factor on original bandwidth
 t_sub = 5;
 
 % Parameters of synthetic topography
@@ -96,8 +96,8 @@ save('FEM2D_Simulations_CS2_Lognormal_Hamming');
 % Use parallel processing
 % parpool
 
-% Time domain, interval half t_sub
-t = (0.5/bandwidth)*((1:(1/t_sub):N_tb) - t_0);
+% Time domain
+t = (1/bandwidth)*((1:(1/t_sub):N_tb) - t_0);
 
 % Loop model over vector variables
 P_t_full_range = cell(length(sigma_si),length(sigma_surf_si));

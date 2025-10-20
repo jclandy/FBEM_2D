@@ -80,12 +80,12 @@ N_tb = 115; % (default = 70)
 % Range bin at mean scattering surface, i.e. time = 0
 t_0 = 30; % (default = 15)
 
-% Time oversampling factor
-t_sub = 5;
+% Time oversampling factor on original bandwidth
+t_sub = 10;
 
 % Parameters of synthetic topography
 topo_type = 2; % type of surface: 1 = Gaussian, 2 = lognormal, 3 = fractal
-l_surf = 5; % large-scale correlation length (default = 5 m)
+l_surf = 20; % large-scale correlation length (default = 5 m)
 dx = 5; % resolution of grid for deriving the distribution of surface slopes, m (default = 1 m)
 
 % Antenna Geometry
@@ -98,8 +98,8 @@ save('FEM_Simulations_AltiKa_Lognormal');
 % Use parallel processing
 % parpool
 
-% Time domain, interval half t_sub
-t = (0.5/bandwidth)*((1:(1/t_sub):N_tb) - t_0);
+% Time domain
+t = (1/bandwidth)*((1:(1/t_sub):N_tb) - t_0);
 
 % Loop model over vector variables
 P_t_full_range = cell(length(sigma_si),length(sigma_surf_si));

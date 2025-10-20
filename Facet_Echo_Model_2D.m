@@ -57,7 +57,7 @@ c = 299792458; % speed of light, m/s
 Re = 6371*10^3; % earth's radius, m
 
 f_c = c/lambda; % radar frequency, Hz
-k = (2*pi)/lambda; % wavenumber
+k0 = (2*pi)/lambda; % wavenumber
 
 delta_x = v/prf; % distance between coherent pulses in synthetic aperture, m
 
@@ -193,11 +193,10 @@ T = @(x,y,t,x_0,y_0,tc) t + 2*h/c + tc - 2*(R(x,y,x_0,y_0)/c);
 % Power envelope
 P_t = @(x,y,t,x_0,y_0,tc) sinc(bandwidth*T(x,y,t,x_0,y_0,tc)).^2;
     
-%% Construct beam weighting function
-if op_mode==1 || beam_weighting == 1
-    H = ones(1,N_b);
-elseif op_mode==2 && beam_weighting == 2    
-    H = hamming(N_b);
+%% Beam weighting function
+if op_mode==1
+    beam_weighting = 1;
+else
 end
 
 %% Radar Simulator Loop
@@ -207,16 +206,24 @@ P_t_full_si_surf = zeros(length(m),length(t));
 P_t_full_s_surf = zeros(length(m),length(t));
 P_t_full_s_vol = zeros(length(m),length(t));
 parfevalOnAll(@warning,0,'off','all');
-parfor i = 1:length(m)
+parfor ii = 1:length(m)
     
     %% Antenna location
 
-    X_0 = h*m(i)*epsilon_b + h*tan(pitch); % along track
+    X_0 = h*m(ii)*epsilon_b + h*tan(pitch); % along track
     Y_0 = h*tan(roll); % across track
     
     %% Synthetic beam gain function
-
-    P_m = @(x) D_0*sin(N_b*(k*delta_x*sin(theta_l(x,X_0) + m(i)*epsilon_b))).^2./(N_b*sin(k*delta_x*sin(theta_l(x,X_0) + m(i)*epsilon_b))).^2; 
+    
+    P_m = [];
+    if beam_weighting == 1
+        % Rectangular
+        P_m = @(x) D_0*sin(N_b*(k0*delta_x*sin(theta_l(x,X_0) + m(ii)*epsilon_b))).^2./(N_b*sin(k0*delta_x*sin(theta_l(x,X_0) + m(ii)*epsilon_b))).^2; 
+    elseif beam_weighting == 2
+        % Apply hamming window to azimuthal response function
+        n = 0:(N_b-1);
+        P_m = @(x) abs(sum((0.54 - 0.46*cos((2*pi*n)/(N_b - 1))) .* exp(2*1j*k0*v/prf*(theta_l(x(:),X_0) + m(ii)*epsilon_b).*(n - (N_b-1)/2)),2).^2);
+    end
 
     %% Slant-range time correction
 
@@ -267,32 +274,37 @@ parfor i = 1:length(m)
     end
 
     % Radar equation integral per range bin
-    warning('off','all')
+    % warning('off','all')
     FSIR_S0_P_t_si_surf = zeros(size(t));
     FSIR_S0_P_t_s_surf = zeros(size(t));
     FSIR_S0_P_t_s_vol = zeros(size(t));
-    for j = 1:length(t)
+    for jj = 1:length(t)
         
         % sea ice surface
-        % si_surf_tracer(j) = quad2d(@(x,y) P_t(x,y,t(j)).*G(x,y,X_0,Y_0).^2.*P_m(x).*MU_THETA_si(THETA_G(x,y,X_0,Y_0)), -x_lim + X_0, x_lim + X_0, -y_lim + Y_0, y_lim + Y_0, 'abstol',1e-8,'reltol',1e-8,'MaxFunEvals',1500)*1/h^4; % exact
-        FSIR_S0_P_t_si_surf(j) = quad2d(@(x,y) P_t(x,y,t(j),X_0,Y_0,TC).*G(x,y,X_0,Y_0).^2.*P_m(x).*MU_THETA_FIT_si(x,y), -x_lim + X_0, x_lim + X_0, -y_lim + Y_0, y_lim + Y_0, 'abstol',1e-8,'reltol',1e-8,'MaxFunEvals',1500)*1/h^4; % approximated
+        % si_surf_tracer(jj) = quad2d(@(x,y) P_t(x,y,t(jj)).*G(x,y,X_0,Y_0).^2.*P_m(x).*MU_THETA_si(THETA_G(x,y,X_0,Y_0)), -x_lim + X_0, x_lim + X_0, -y_lim + Y_0, y_lim + Y_0, 'abstol',1e-8,'reltol',1e-8,'MaxFunEvals',1500)*1/h^4; % exact
+        FSIR_S0_P_t_si_surf(jj) = quad2d(@(x,y) P_t(x,y,t(jj),X_0,Y_0,TC).*G(x,y,X_0,Y_0).^2.*P_m(x).*MU_THETA_FIT_si(x,y), -x_lim + X_0, x_lim + X_0, -y_lim + Y_0, y_lim + Y_0, 'abstol',1e-8,'reltol',1e-8,'MaxFunEvals',1500)*1/h^4; % approximated
         
-        % snow surface
-        % s_surf_tracer(j) = quad2d(@(x,y) P_t(x,y,t(j)) + 2*h_s/c_s.*G(x,y,X_0,Y_0).^2.*P_m(x).*MU_THETA_s(THETA_G(x,y,X_0,Y_0)), -x_lim + X_0, x_lim + X_0, -y_lim + Y_0, y_lim + Y_0, 'abstol',1e-8,'reltol',1e-8,'MaxFunEvals',1500)*1/h^4; % exact
-        FSIR_S0_P_t_s_surf(j) = quad2d(@(x,y) P_t(x,y,t(j) + 2*h_s/c_s,X_0,Y_0,TC).*G(x,y,X_0,Y_0).^2.*P_m(x).*MU_THETA_FIT_s(x,y), -x_lim + X_0, x_lim + X_0, -y_lim + Y_0, y_lim + Y_0, 'abstol',1e-8,'reltol',1e-8,'MaxFunEvals',1500)*1/h^4; % approximated
+        if h_s > 0
+            % snow surface
+            % s_surf_tracer(jj) = quad2d(@(x,y) P_t(x,y,t(jj)) + 2*h_s/c_s.*G(x,y,X_0,Y_0).^2.*P_m(x).*MU_THETA_s(THETA_G(x,y,X_0,Y_0)), -x_lim + X_0, x_lim + X_0, -y_lim + Y_0, y_lim + Y_0, 'abstol',1e-8,'reltol',1e-8,'MaxFunEvals',1500)*1/h^4; % exact
+            FSIR_S0_P_t_s_surf(jj) = quad2d(@(x,y) P_t(x,y,t(jj) + 2*h_s/c_s,X_0,Y_0,TC).*G(x,y,X_0,Y_0).^2.*P_m(x).*MU_THETA_FIT_s(x,y), -x_lim + X_0, x_lim + X_0, -y_lim + Y_0, y_lim + Y_0, 'abstol',1e-8,'reltol',1e-8,'MaxFunEvals',1500)*1/h^4; % approximated
+            
+            % snow volume (symmetric along y-axis about origin [X_0,Y_0] except when roll ~= 0)
+            y_low = @(x) real(sqrt(real(sqrt((h/((Re+h)/Re))*c*(t(jj) + TC))).^2 - (x - X_0).^2)) + Y_0;
+            y_high = @(x) real(sqrt(real(sqrt((h/((Re+h)/Re))*c*(t(jj) + TC + 2*h_s/c_s))).^2 - (x - X_0).^2)) + Y_0;
         
-        % snow volume (symmetric along y-axis about origin [X_0,Y_0] except when roll ~= 0)
-        y_low = @(x) real(sqrt(real(sqrt((h/((Re+h)/Re))*c*(t(j) + TC))).^2 - (x - X_0).^2)) + Y_0;
-        y_high = @(x) real(sqrt(real(sqrt((h/((Re+h)/Re))*c*(t(j) + TC + 2*h_s/c_s))).^2 - (x - X_0).^2)) + Y_0;
-    
-        FSIR_S0_P_t_s_vol(j) = 2*quad2d(@(x,y) P_t(x,y,t(j) + 2*h_s/c_s,X_0,Y_0,TC).*G(x,y,X_0,Y_0).^2.*P_m(x).*VU_THETA_T_s(THETA_G(x,y,X_0,Y_0),T(x,y,t(j),X_0,Y_0,TC)), x_low(t(j)), x_high(t(j)), y_low, y_high,'abstol',1e-8)*1/h^4; % exact
+            FSIR_S0_P_t_s_vol(jj) = 2*quad2d(@(x,y) P_t(x,y,t(jj) + 2*h_s/c_s,X_0,Y_0,TC).*G(x,y,X_0,Y_0).^2.*P_m(x).*VU_THETA_T_s(THETA_G(x,y,X_0,Y_0),T(x,y,t(jj),X_0,Y_0,TC)), x_low(t(jj)), x_high(t(jj)), y_low, y_high,'abstol',1e-8)*1/h^4; % exact
+        else
+            FSIR_S0_P_t_s_surf(jj) = 0;
+            FSIR_S0_P_t_s_vol(jj) = 0;
+        end
 
     end
     FSIR_S0_P_t_si_surf(isnan(FSIR_S0_P_t_si_surf)) = 0;
     FSIR_S0_P_t_s_surf(isnan(FSIR_S0_P_t_s_surf)) = 0;
     FSIR_S0_P_t_s_vol(isnan(FSIR_S0_P_t_s_vol)) = 0;
     % FSIR_S0_P_t = FSIR_S0_P_t_si_surf + FSIR_S0_P_t_s_surf + FSIR_S0_P_t_s_vol;
-    warning('on','all')
+    % warning('on','all')
     
     %% Convolution of FSIR and P_t over the sigma0 weighted surface height distribution
     
@@ -360,19 +372,18 @@ parfor i = 1:length(m)
     end
 
     %% Normalize with radar equation (absolute numbers not trustworthy)
-    % Apply weighting to single-look echo stack
-
+    
     P_r_si_surf = ((lambda^2*P_T)/(4*pi)^3)*(0.5*c*h)*P_r_extend_si_surf((1:length(t)));
     P_r_si_surf(P_r_si_surf<0) = 0;
-    P_t_full_si_surf(i,:) = P_r_si_surf*H(i);
+    P_t_full_si_surf(ii,:) = P_r_si_surf;
     
     P_r_s_surf = ((lambda^2*P_T)/(4*pi)^3)*(0.5*c*h)*P_r_extend_s_surf((1:length(t)));
     P_r_s_surf(P_r_s_surf<0) = 0;
-    P_t_full_s_surf(i,:) = P_r_s_surf*H(i);
+    P_t_full_s_surf(ii,:) = P_r_s_surf;
     
     P_r_s_vol = ((lambda^2*P_T)/(4*pi)^3)*(0.5*c*h)*P_r_extend_s_vol((1:length(t)));
     P_r_s_vol(P_r_s_vol<0) = 0;
-    P_t_full_s_vol(i,:) = P_r_s_vol*H(i);
+    P_t_full_s_vol(ii,:) = P_r_s_vol;
        
 end
 parfevalOnAll(@warning,0,'on','all');
