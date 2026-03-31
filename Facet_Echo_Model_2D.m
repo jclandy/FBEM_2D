@@ -102,29 +102,47 @@ if topo_type==1
     mu = @(sigma) 0;
     var = @(sigma) sigma^2;
     % rough0 = @(x,mu,var) (1/(sqrt(var)*sqrt(2*pi))).*exp(-0.5*((-(x + 1 - mu)/sqrt(var)).^2)); % gaussian
-    rough0 = @(x,mu,var) normpdf(-x-1,mu,sqrt(var));
+    rough0 = @(x,mu,var) normpdf(-x,mu,sqrt(var));
     
 elseif topo_type==2
     % Lognormal height distribution function
     mu = @(sigma) log(1/sqrt(1 + sigma^2));
     var = @(sigma) log(1 + sigma^2/1^2);
-    % rough0 = @(x,mu,var) IF(x<0,1./(-x*sqrt(var)*sqrt(2*pi)).*exp(-log(-x - mu).^2/(2*var)),0); % lognormal
-    rough0 = @(x,mu,var) lognpdf(-x,mu,sqrt(var));
+    % rough0 = @(x,mu,var) IF(x<0,1./((1-x)*sqrt(var)*sqrt(2*pi)).*exp(-log((1-x) - mu).^2/(2*var)),0); % lognormal
+    rough0 = @(x,mu,var) lognpdf(1 - x,mu,sqrt(var));
     
 end
 
 %% Sigma0 functions
 
 % Slope distribution std dev from random statistical surface
-[x,y,z] = synthetic_topo_shell(1,topo_type,sigma_surf_si,l_surf,0,dx);
-
-[FX,FY] = gradient(z,x(1,:),y(:,1));
-S = atan(sqrt(FX.^2 + FY.^2));
-sigma_dxdyh_si = rms(S(:))/sqrt(2); % rms slope that matches the rician pdf scale parameter equilavent to histogram(S(:))
-sigma_dxdyh_s = rms(S(:)*sigma_surf_s/sigma_surf_si)/sqrt(2); % scale slope distribution for snow topography
+% [x,y,z] = synthetic_topo_shell(1,topo_type,sigma_surf_si,l_surf,0,dx);
+% 
+% [FX,FY] = gradient(z,x(1,:),y(:,1));
+% S = atan(sqrt(FX.^2 + FY.^2));
+% sigma_dxdyh_si = rms(S(:))/sqrt(2); % rms slope that matches the rician pdf scale parameter equilavent to histogram(S(:))
+% sigma_dxdyh_s = rms(S(:)*sigma_surf_s/sigma_surf_si)/sqrt(2); % scale slope distribution for snow topography
 
 % sigma_dxdyh_si = sigma_surf_si/l_surf; % effective rms slope for exponentially-correlated surface (not applicable for non-Gaussian surface?)
 % sigma_dxdyh_s = sigma_surf_s/l_surf;
+
+% Std dev of zero-mean Gaussian field underlying the height distribution
+sigma_g_si = sqrt(log(1 + sigma_surf_si^2));
+sigma_g_s = sqrt(log(1 + sigma_surf_s^2));
+
+% For isotropic surface with exponential autocorrelation: C(r) = sigma_g^2 * exp(-r/L)
+% Then derivative variance:
+sigma_gp_si = sigma_g_si / sqrt(2*l_surf^2);
+sigma_gp_s = sigma_g_s / sqrt(2*l_surf^2);
+
+% Mean slope variance
+z2_mean_si = exp(2*sigma_g_si^2);  % for zero-mean Gaussian g
+z2_mean_s = exp(2*sigma_g_s^2);  % for zero-mean Gaussian g
+
+% RMS slope
+% For isotropic surface: <|grad z|^2> = 2 * sigma_p^2
+sigma_dxdyh_si = sigma_gp_si * sqrt(z2_mean_si);
+sigma_dxdyh_s = sigma_gp_s * sqrt(z2_mean_s);
 
 % Slope PDF for angle theta from antenna location, follows the Rice distribution
 S_PDF = @(slope,theta,sigma) pdf('Rician',slope,theta,sigma);
@@ -142,38 +160,46 @@ VU_THETA_t_s = @(theta,t) 10.^(ppval(sigma_0_snow_vol,theta)/10)*kappa_e.*exp(-c
 % here by weighting the height distribution for the backscatter
 % contribution as a function of slope
 
-% If sigma_dxdyh is explicitly calculated from a random surface slope distribution
-covmat_si = cov(z(:),S(:)); % sea ice
-cov_h_dhdx_si = covmat_si(1,2);
-covmat_s = cov(z(:)*sigma_surf_s/sigma_surf_si,S(:)*sigma_surf_s/sigma_surf_si); % scale slope distribution for snow topography
-cov_h_dhdx_s = covmat_s(1,2);
+% Define slope PDF conditional on z
+S_Z_PDF = @(slope, z, sigma_gp) (slope ./ (sigma_gp^2 .* z.^2)) .* exp(-slope.^2 ./ (2 * sigma_gp^2 .* z.^2));
 
-% Mean of slope distribution, when noncentrality = 0
-% https://stats.libretexts.org/Bookshelves/Probability_Theory/Probability_Mathematical_Statistics_and_Stochastic_Processes_(Siegrist)/04%3A_Expected_Value/4.05%3A_Covariance_and_Correlation
-% eq 4.5.34
-S_mean = @(sigma_dxdyh) sigma_dxdyh*sqrt(pi/2);
+% % If sigma_dxdyh is explicitly calculated from a random surface slope distribution
+% covmat_si = cov(z(:),S(:)); % sea ice
+% cov_h_dhdx_si = covmat_si(1,2);
+% covmat_s = cov(z(:)*sigma_surf_s/sigma_surf_si,S(:)*sigma_surf_s/sigma_surf_si); % scale slope distribution for snow topography
+% cov_h_dhdx_s = covmat_s(1,2);
+% 
+% % Mean of slope distribution, when noncentrality = 0
+% % https://stats.libretexts.org/Bookshelves/Probability_Theory/Probability_Mathematical_Statistics_and_Stochastic_Processes_(Siegrist)/04%3A_Expected_Value/4.05%3A_Covariance_and_Correlation
+% % eq 4.5.34
+% S_mean = @(sigma_dxdyh) sigma_dxdyh*sqrt(pi/2);
+% 
+% % Mean slope of distribution as a function of surface height z,
+% % with z reversed in terms of range distance
+% S_z = @(z,sigma_surf,sigma_dxdyh,cov_h_dhdx) S_mean(sigma_dxdyh) + cov_h_dhdx/sigma_surf^2*-z;
+% 
+% % Rician scale parameter as a function of surface height z
+% sigma_dxdyh_z = @(z,sigma_surf,sigma_dxdyh,cov_h_dhdx) S_z(z,sigma_surf,sigma_dxdyh,cov_h_dhdx)/sqrt(pi/2);
 
-% Mean slope of distribution as a function of surface height z,
-% with z reversed in terms of range distance
-S_z = @(z,sigma_surf,sigma_dxdyh,cov_h_dhdx) S_mean(sigma_dxdyh) + cov_h_dhdx/sigma_surf^2*-z;
-
-% Rician scale parameter as a function of surface height z
-sigma_dxdyh_z = @(z,sigma_surf,sigma_dxdyh,cov_h_dhdx) S_z(z,sigma_surf,sigma_dxdyh,cov_h_dhdx)/sqrt(pi/2);
+% % Surface backscattering distribution as a function of surface height z
+% MU_z_si = @(z) integral(@(slope) MU_S_si(slope).*S_PDF(slope,0,sigma_dxdyh_z(z,sigma_surf_si,sigma_dxdyh_si,cov_h_dhdx_si)), 0, sigma_dxdyh_si*10, 'arrayvalued', true);
+% MU_z_s = @(z) integral(@(slope) MU_S_s(slope).*S_PDF(slope,0,sigma_dxdyh_z(z,sigma_surf_s,sigma_dxdyh_s,cov_h_dhdx_s)), 0, sigma_dxdyh_s*10, 'arrayvalued', true);
 
 % Surface backscattering distribution as a function of surface height z
-MU_z_si = @(z) integral(@(slope) MU_S_si(slope).*S_PDF(slope,0,sigma_dxdyh_z(z,sigma_surf_si,sigma_dxdyh_si,cov_h_dhdx_si)), 0, sigma_dxdyh_si*10, 'arrayvalued', true);
-MU_z_s = @(z) integral(@(slope) MU_S_s(slope).*S_PDF(slope,0,sigma_dxdyh_z(z,sigma_surf_s,sigma_dxdyh_s,cov_h_dhdx_s)), 0, sigma_dxdyh_s*10, 'arrayvalued', true);
+MU_z_si = @(z) integral(@(slope) MU_S_si(slope).*S_Z_PDF(slope,z,sigma_gp_si), 0, sigma_dxdyh_si*10, 'arrayvalued', true);
+MU_z_s = @(z) integral(@(slope) MU_S_s(slope).*S_Z_PDF(slope,z,sigma_gp_s), 0, sigma_dxdyh_s*10, 'arrayvalued', true);
 
 % Discretized range bins
 tsamp = round(1/bandwidth/(t(2)-t(1)));
+dz = c/(2*bandwidth*tsamp) * 0.1;
 L = 1049;
 Z0 = 512;
-Z = ((1/tsamp)*((1:L)-1-Z0)*1/bandwidth)*c/2;
+Z = ((0:L-1) - Z0) * dz;
 
 % Ice and snow surface backscattering distributions in discretized range bins
 warning('off','all')
-MU_Z_si = MU_z_si(Z);
-MU_Z_si(isnan(MU_Z_si)) = 0;
+MU_Z_si = MU_z_si(exp(sigma_g_si^2 / 2) - Z);
+MU_Z_si(isnan(MU_Z_si) | Z > exp(sigma_g_si^2 / 2)) = 0;
 MU_Z_s = MU_z_s(Z);
 MU_Z_s(isnan(MU_Z_s)) = 0;
 warning('on','all')
@@ -183,7 +209,7 @@ warning('on','all')
 % Generally EM bias for sea ice will be higher than for ocean with same
 % height stddev, because the sea ice has a more skewed/lognormal height
 % distribution than the skewed-gaussian ocean distribution
-em_bias = sum(Z.*rough0(Z-1,mu(sigma_surf_si),var(sigma_surf_si)).*MU_Z_si)/sum(rough0(Z-1,mu(sigma_surf_si),var(sigma_surf_si)).*MU_Z_si);
+em_bias = sum(Z.*rough0(Z,mu(sigma_surf_si),var(sigma_surf_si)).*MU_Z_si)/sum(rough0(Z,mu(sigma_surf_si),var(sigma_surf_si)).*MU_Z_si);
 
 %% Transmitted power envelope
     
@@ -198,6 +224,11 @@ if op_mode==1
     beam_weighting = 1;
 else
 end
+
+% Hamming window parameters
+n = (0:(N_b-1))';
+w = 0.54 - 0.46*cos((2*pi*n)/(N_b - 1));
+C = 2*1j*k0*v/prf;
 
 %% Radar Simulator Loop
 % Formulated for parallel processing
@@ -218,11 +249,11 @@ parfor ii = 1:length(m)
     P_m = [];
     if beam_weighting == 1
         % Rectangular
-        P_m = @(x) D_0*sin(N_b*(k0*delta_x*sin(theta_l(x,X_0) + m(ii)*epsilon_b))).^2./(N_b*sin(k0*delta_x*sin(theta_l(x,X_0) + m(ii)*epsilon_b))).^2; 
+        P_m = @(x) sin(N_b*(k0*delta_x*sin(theta_l(x,X_0) + m(ii)*epsilon_b))).^2./(N_b*sin(k0*delta_x*sin(theta_l(x,X_0) + m(ii)*epsilon_b))).^2; 
     elseif beam_weighting == 2
         % Apply hamming window to azimuthal response function
-        n = 0:(N_b-1);
-        P_m = @(x) abs(sum((0.54 - 0.46*cos((2*pi*n)/(N_b - 1))) .* exp(2*1j*k0*v/prf*(theta_l(x(:),X_0) + m(ii)*epsilon_b).*(n - (N_b-1)/2)),2).^2);
+        alpha = @(x) C * (theta_l(x,X_0) + m(ii)*epsilon_b);
+        P_m = @(x) abs(polyval(flip(w), exp(alpha(x)))).^2;
     end
 
     %% Slant-range time correction
@@ -232,7 +263,7 @@ parfor ii = 1:length(m)
     %% Backscatter response for surfaces
         
     % Calculate mean sigma0 as a function of theta
-    the = (pi/2 - atan2(h, sqrt(((0:1:delta_x_bl/2)-X_0).^2 + ((0:1:delta_x_bl/2)-Y_0).^2)))';
+    the = (pi/2 - atan2(h, sqrt(((0:1:delta_x_bl/2)+abs(X_0)).^2 + ((0:1:delta_x_bl/2)+abs(Y_0)).^2)))'; % error found %
     
     % Sea ice surface
     MU_THETA_si = @(theta) integral(@(slope) MU_S_si(slope).*S_PDF(slope,theta,sigma_dxdyh_si), 0, max(the), 'arrayvalued', true, 'abstol',1e-5,'reltol',1e-5);
@@ -281,12 +312,12 @@ parfor ii = 1:length(m)
     for jj = 1:length(t)
         
         % sea ice surface
-        % si_surf_tracer(jj) = quad2d(@(x,y) P_t(x,y,t(jj)).*G(x,y,X_0,Y_0).^2.*P_m(x).*MU_THETA_si(THETA_G(x,y,X_0,Y_0)), -x_lim + X_0, x_lim + X_0, -y_lim + Y_0, y_lim + Y_0, 'abstol',1e-8,'reltol',1e-8,'MaxFunEvals',1500)*1/h^4; % exact
+        % FSIR_S0_P_t_si_surf(jj) = quad2d(@(x,y) P_t(x,y,t(jj)).*G(x,y,X_0,Y_0).^2.*P_m(x).*MU_THETA_si(THETA_G(x,y,X_0,Y_0)), -x_lim + X_0, x_lim + X_0, -y_lim + Y_0, y_lim + Y_0, 'abstol',1e-8,'reltol',1e-8,'MaxFunEvals',1500)*1/h^4; % exact
         FSIR_S0_P_t_si_surf(jj) = quad2d(@(x,y) P_t(x,y,t(jj),X_0,Y_0,TC).*G(x,y,X_0,Y_0).^2.*P_m(x).*MU_THETA_FIT_si(x,y), -x_lim + X_0, x_lim + X_0, -y_lim + Y_0, y_lim + Y_0, 'abstol',1e-8,'reltol',1e-8,'MaxFunEvals',1500)*1/h^4; % approximated
         
         if h_s > 0
             % snow surface
-            % s_surf_tracer(jj) = quad2d(@(x,y) P_t(x,y,t(jj)) + 2*h_s/c_s.*G(x,y,X_0,Y_0).^2.*P_m(x).*MU_THETA_s(THETA_G(x,y,X_0,Y_0)), -x_lim + X_0, x_lim + X_0, -y_lim + Y_0, y_lim + Y_0, 'abstol',1e-8,'reltol',1e-8,'MaxFunEvals',1500)*1/h^4; % exact
+            % FSIR_S0_P_t_s_surf(jj) = quad2d(@(x,y) P_t(x,y,t(jj)) + 2*h_s/c_s.*G(x,y,X_0,Y_0).^2.*P_m(x).*MU_THETA_s(THETA_G(x,y,X_0,Y_0)), -x_lim + X_0, x_lim + X_0, -y_lim + Y_0, y_lim + Y_0, 'abstol',1e-8,'reltol',1e-8,'MaxFunEvals',1500)*1/h^4; % exact
             FSIR_S0_P_t_s_surf(jj) = quad2d(@(x,y) P_t(x,y,t(jj) + 2*h_s/c_s,X_0,Y_0,TC).*G(x,y,X_0,Y_0).^2.*P_m(x).*MU_THETA_FIT_s(x,y), -x_lim + X_0, x_lim + X_0, -y_lim + Y_0, y_lim + Y_0, 'abstol',1e-8,'reltol',1e-8,'MaxFunEvals',1500)*1/h^4; % approximated
             
             % snow volume (symmetric along y-axis about origin [X_0,Y_0] except when roll ~= 0)
@@ -307,6 +338,13 @@ parfor ii = 1:length(m)
     % warning('on','all')
     
     %% Convolution of FSIR and P_t over the sigma0 weighted surface height distribution
+
+    % Discretized range bins
+    tsamp = round(1/bandwidth/(t(2)-t(1)));
+    dz = c/(2*bandwidth*tsamp);
+    L = 1049;
+    Z0 = 512;
+    Z = ((0:L-1) - Z0) * dz;
     
     % Weight height distribution by covariance with sigma0
     if sigma_surf_si==0
@@ -319,82 +357,73 @@ parfor ii = 1:length(m)
     else
         
         %%% Snow surface
-        rough1 = rough0(Z-1,mu(sigma_surf_s),var(sigma_surf_s)).*MU_Z_s; rough1 = rough1/trapz(Z,rough1);
+        rough1 = rough0(Z,mu(sigma_surf_s),var(sigma_surf_s)).*MU_Z_s; rough1 = rough1/trapz(Z,rough1);
     
         % Prepare vectors for FFT
-        rough1_spl = [rough1(Z0:L) rough1(1:Z0-1)];
-    
-        zoos = zeros(1,length(length(t)+1:L));
-        FSIR_S0_P_t_s_surf_extend = [FSIR_S0_P_t_s_surf zoos];
+        rough1_spl = [rough1(Z0+1:end) rough1(1:Z0)];
+
+        FSIR_S0_P_t_s_surf_extend = [FSIR_S0_P_t_s_surf zeros(1, L - length(FSIR_S0_P_t_s_surf))];
         
         % Convolution through FFT
-        f_rough1_spl = sqrt(L)*10^(-10)*dft(rough1_spl,0,1);
-        f_FSIR_S0_P_t_s_surf_extend = sqrt(L)*10^(-10)*dft(FSIR_S0_P_t_s_surf_extend,0,1);
+        f_rough1_spl = fft(rough1_spl, L);
+        f_FSIR_S0_P_t_s_surf_extend = fft(FSIR_S0_P_t_s_surf_extend, L);
         
-        f_rough1_FSIR_S0_P_t_s_surf = f_rough1_spl.*f_FSIR_S0_P_t_s_surf_extend;
-        
-        P_r_extend_s_surf = real((1/sqrt(L))*(1/10^(-10))*dft(f_rough1_FSIR_S0_P_t_s_surf,0,-1));
+        P_r_extend_s_surf = real(ifft(f_rough1_spl .* f_FSIR_S0_P_t_s_surf_extend)) * dz;
         
         %%% Snow volume
-        rough1 = rough0(Z-1,mu(sigma_surf_s),var(sigma_surf_s)); % no em bias
+        rough1 = rough0(Z,mu(sigma_surf_s),var(sigma_surf_s)); % no em bias
     
         % Prepare vectors for FFT
-        rough1_spl = [rough1(Z0:L) rough1(1:Z0-1)];
+        rough1_spl = [rough1(Z0+1:end) rough1(1:Z0)];
     
-        zoos = zeros(1,length(length(t)+1:L));
-        FSIR_S0_P_t_s_vol_extend = [FSIR_S0_P_t_s_vol zoos];
+        FSIR_S0_P_t_s_vol_extend = [FSIR_S0_P_t_s_vol zeros(1, L - length(FSIR_S0_P_t_s_vol))];
     
         % Convolution through FFT
-        f_rough1_spl = sqrt(L)*10^(-10)*dft(rough1_spl,0,1);
-        f_FSIR_S0_P_t_s_vol_extend = sqrt(L)*10^(-10)*dft(FSIR_S0_P_t_s_vol_extend,0,1);
+        f_rough1_spl = fft(rough1_spl, L);
+        f_FSIR_S0_P_t_s_vol_extend = fft(FSIR_S0_P_t_s_vol_extend, L);
         
-        f_rough1_FSIR_S0_P_t_s_vol = f_rough1_spl.*f_FSIR_S0_P_t_s_vol_extend;
-
-        P_r_extend_s_vol = real((1/sqrt(L))*(1/10^(-10))*dft(f_rough1_FSIR_S0_P_t_s_vol,0,-1));
+        P_r_extend_s_vol = real(ifft(f_rough1_spl .* f_FSIR_S0_P_t_s_vol_extend)) * dz;
         
         %%% Sea ice
-        rough1 = rough0(Z-1,mu(sigma_surf_si),var(sigma_surf_si)).*MU_Z_si; rough1 = rough1/trapz(Z,rough1);
+        rough1 = rough0(Z,mu(sigma_surf_si),var(sigma_surf_si)).*MU_Z_si; rough1 = rough1/trapz(Z,rough1);
     
         % Prepare vectors for FFT
-        rough1_spl = [rough1(Z0:L) rough1(1:Z0-1)];
+        rough1_spl = [rough1(Z0+1:end) rough1(1:Z0)];
     
-        zoos = zeros(1,length(length(t)+1:L));
-        FSIR_S0_P_t_si_surf_extend = [FSIR_S0_P_t_si_surf zoos];
+        FSIR_S0_P_t_si_surf_extend = [FSIR_S0_P_t_si_surf zeros(1, L - length(FSIR_S0_P_t_si_surf))];
 
         % Convolution through FFT
-        f_rough1_spl = sqrt(L)*10^(-10)*dft(rough1_spl,0,1);
-        f_FSIR_S0_P_t_si_surf_extend = sqrt(L)*10^(-10)*dft(FSIR_S0_P_t_si_surf_extend,0,1);
+        f_rough1_spl = fft(rough1_spl, L);
+        f_FSIR_S0_P_t_si_surf_extend = fft(FSIR_S0_P_t_si_surf_extend, L);
         
-        f_rough1_FSIR_S0_P_t_si_surf = f_rough1_spl.*f_FSIR_S0_P_t_si_surf_extend;
-
-        P_r_extend_si_surf = real((1/sqrt(L))*(1/10^(-10))*dft(f_rough1_FSIR_S0_P_t_si_surf,0,-1));
+        P_r_extend_si_surf = real(ifft(f_rough1_spl .* f_FSIR_S0_P_t_si_surf_extend)) * dz;
         
     end
 
     %% Normalize with radar equation (absolute numbers not trustworthy)
     
-    P_r_si_surf = ((lambda^2*P_T)/(4*pi)^3)*(0.5*c*h)*P_r_extend_si_surf((1:length(t)));
-    P_r_si_surf(P_r_si_surf<0) = 0;
-    P_t_full_si_surf(ii,:) = P_r_si_surf;
-    
-    P_r_s_surf = ((lambda^2*P_T)/(4*pi)^3)*(0.5*c*h)*P_r_extend_s_surf((1:length(t)));
+    P_r_s_surf = ((lambda^2*P_T)/(4*pi)^3)*(0.5*c*h)*P_r_extend_s_surf(1:length(t));
     P_r_s_surf(P_r_s_surf<0) = 0;
     P_t_full_s_surf(ii,:) = P_r_s_surf;
     
-    P_r_s_vol = ((lambda^2*P_T)/(4*pi)^3)*(0.5*c*h)*P_r_extend_s_vol((1:length(t)));
+    P_r_s_vol = ((lambda^2*P_T)/(4*pi)^3)*(0.5*c*h)*P_r_extend_s_vol(1:length(t));
     P_r_s_vol(P_r_s_vol<0) = 0;
     P_t_full_s_vol(ii,:) = P_r_s_vol;
-       
+    
+    P_r_si_surf = ((lambda^2*P_T)/(4*pi)^3)*(0.5*c*h)*P_r_extend_si_surf(1:length(t));
+    P_r_si_surf(P_r_si_surf<0) = 0;
+    P_t_full_si_surf(ii,:) = P_r_si_surf;
+    
 end
 parfevalOnAll(@warning,0,'on','all');
 
 % Full DDM
 P_t_full_comp = permute(cat(3,P_t_full_s_surf,P_t_full_s_vol,P_t_full_si_surf),[2 1 3]);
-P_t_full = (P_t_full_si_surf + P_t_full_s_surf + P_t_full_s_vol)';
+P_t_full = nansum(P_t_full_comp,3)';
 
 % Multi-looked echoes
 P_t_ml_comp = permute(nansum(P_t_full_comp,2),[1 3 2]);
-P_t_ml = nansum(P_t_full,2);
+P_t_ml = nansum(P_t_full,1);
 
 
 end
