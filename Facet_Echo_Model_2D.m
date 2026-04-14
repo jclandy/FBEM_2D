@@ -110,7 +110,15 @@ elseif topo_type==2
     var = @(sigma) log(1 + sigma^2/1^2);
     % rough0 = @(x,mu,var) IF(x<0,1./((1-x)*sqrt(var)*sqrt(2*pi)).*exp(-log((1-x) - mu).^2/(2*var)),0); % lognormal
     rough0 = @(x,mu,var) lognpdf(1 - x,mu,sqrt(var));
-    
+
+% elseif topo_type==3
+%     % Exp-modified Gaussian height distribution function
+%     skewness = 1.9; %%% User selection %%%
+%     lambda = (2 ./ (skewness .* sigma_surf_si.^3)).^(1/3);
+%     mu = @(sigma) -1/lambda;
+%     var = @(sigma) sigma^2 - 1/lambda^2;
+%     rough0 = @(x,mu,var) emgpdf(-x ,mu,sqrt(var),lambda);
+
 end
 
 %% Sigma0 functions
@@ -191,11 +199,20 @@ MU_z_s = @(z) integral(@(slope) MU_S_s(slope).*S_Z_PDF(slope,z,sigma_gp_s), 0, s
 
 % Discretized range bins
 tsamp = round(1/bandwidth/(t(2)-t(1)));
-dz = c/(2*bandwidth*tsamp) * 0.1;
-L = 1049;
-Z0 = 512;
+dz = c/(2*bandwidth*tsamp);
+L = length(t)*tsamp*2;
+Z0 = floor(L/2);
 Z = ((0:L-1) - Z0) * dz;
 
+% FFT parameters
+N = length(Z);
+M = length(t);
+Lfft = N + M - 1;
+
+z0_ref = Z0 + find(t==0) - 1;
+start_win = z0_ref - (find(t==0) - 1);
+end_win   = start_win + M - 1;
+        
 % Ice and snow surface backscattering distributions in discretized range bins
 warning('off','all')
 MU_Z_si = MU_z_si(exp(sigma_g_si^2 / 2) - Z);
@@ -340,77 +357,53 @@ parfor ii = 1:length(m)
     %% Convolution of FSIR and P_t over the sigma0 weighted surface height distribution
 
     % Discretized range bins
-    tsamp = round(1/bandwidth/(t(2)-t(1)));
-    dz = c/(2*bandwidth*tsamp);
-    L = 1049;
-    Z0 = 512;
-    Z = ((0:L-1) - Z0) * dz;
+    % tsamp = round(1/bandwidth/(t(2)-t(1)));
+    % dz = c/(2*bandwidth*tsamp);
+    % L = length(t);
+    % Z0 = floor(L/2);
+    % Z = ((0:L-1) - Z0) * dz;
     
     % Weight height distribution by covariance with sigma0
     if sigma_surf_si==0
         
         % rough1 = kroneckerDelta(Z,sym(0));
-        P_r_extend_s_surf = FSIR_S0_P_t_s_surf;
-        P_r_extend_s_vol = FSIR_S0_P_t_s_vol;
-        P_r_extend_si_surf = FSIR_S0_P_t_si_surf;
+        P_r_s_surf = FSIR_S0_P_t_s_surf;
+        P_r_s_vol = FSIR_S0_P_t_s_vol;
+        P_r_si_surf = FSIR_S0_P_t_si_surf;
         
     else
         
         %%% Snow surface
         rough1 = rough0(Z,mu(sigma_surf_s),var(sigma_surf_s)).*MU_Z_s; rough1 = rough1/trapz(Z,rough1);
-    
-        % Prepare vectors for FFT
-        rough1_spl = [rough1(Z0+1:end) rough1(1:Z0)];
+        
+        P_r_extend_s_surf = real(ifft(fft(rough1, Lfft) .* fft(FSIR_S0_P_t_s_surf, Lfft))) * dz;
+        P_r_s_surf = P_r_extend_s_surf(start_win:end_win);
 
-        FSIR_S0_P_t_s_surf_extend = [FSIR_S0_P_t_s_surf zeros(1, L - length(FSIR_S0_P_t_s_surf))];
-        
-        % Convolution through FFT
-        f_rough1_spl = fft(rough1_spl, L);
-        f_FSIR_S0_P_t_s_surf_extend = fft(FSIR_S0_P_t_s_surf_extend, L);
-        
-        P_r_extend_s_surf = real(ifft(f_rough1_spl .* f_FSIR_S0_P_t_s_surf_extend)) * dz;
-        
         %%% Snow volume
         rough1 = rough0(Z,mu(sigma_surf_s),var(sigma_surf_s)); % no em bias
-    
-        % Prepare vectors for FFT
-        rough1_spl = [rough1(Z0+1:end) rough1(1:Z0)];
-    
-        FSIR_S0_P_t_s_vol_extend = [FSIR_S0_P_t_s_vol zeros(1, L - length(FSIR_S0_P_t_s_vol))];
-    
-        % Convolution through FFT
-        f_rough1_spl = fft(rough1_spl, L);
-        f_FSIR_S0_P_t_s_vol_extend = fft(FSIR_S0_P_t_s_vol_extend, L);
         
-        P_r_extend_s_vol = real(ifft(f_rough1_spl .* f_FSIR_S0_P_t_s_vol_extend)) * dz;
-        
+        P_r_extend_s_vol = real(ifft(fft(rough1, Lfft) .* fft(FSIR_S0_P_t_s_vol, Lfft))) * dz;
+        P_r_s_vol = P_r_extend_s_vol(start_win:end_win);
+
         %%% Sea ice
         rough1 = rough0(Z,mu(sigma_surf_si),var(sigma_surf_si)).*MU_Z_si; rough1 = rough1/trapz(Z,rough1);
-    
-        % Prepare vectors for FFT
-        rough1_spl = [rough1(Z0+1:end) rough1(1:Z0)];
-    
-        FSIR_S0_P_t_si_surf_extend = [FSIR_S0_P_t_si_surf zeros(1, L - length(FSIR_S0_P_t_si_surf))];
+        
+        P_r_extend_si_surf = real(ifft(fft(rough1, Lfft) .* fft(FSIR_S0_P_t_si_surf, Lfft))) * dz;
+        P_r_si_surf = P_r_extend_si_surf(start_win:end_win);
 
-        % Convolution through FFT
-        f_rough1_spl = fft(rough1_spl, L);
-        f_FSIR_S0_P_t_si_surf_extend = fft(FSIR_S0_P_t_si_surf_extend, L);
-        
-        P_r_extend_si_surf = real(ifft(f_rough1_spl .* f_FSIR_S0_P_t_si_surf_extend)) * dz;
-        
     end
 
     %% Normalize with radar equation (absolute numbers not trustworthy)
     
-    P_r_s_surf = ((lambda^2*P_T)/(4*pi)^3)*(0.5*c*h)*P_r_extend_s_surf(1:length(t));
+    P_r_s_surf = ((lambda^2*P_T)/(4*pi)^3)*(0.5*c*h)*P_r_s_surf;
     P_r_s_surf(P_r_s_surf<0) = 0;
     P_t_full_s_surf(ii,:) = P_r_s_surf;
     
-    P_r_s_vol = ((lambda^2*P_T)/(4*pi)^3)*(0.5*c*h)*P_r_extend_s_vol(1:length(t));
+    P_r_s_vol = ((lambda^2*P_T)/(4*pi)^3)*(0.5*c*h)*P_r_s_vol;
     P_r_s_vol(P_r_s_vol<0) = 0;
     P_t_full_s_vol(ii,:) = P_r_s_vol;
     
-    P_r_si_surf = ((lambda^2*P_T)/(4*pi)^3)*(0.5*c*h)*P_r_extend_si_surf(1:length(t));
+    P_r_si_surf = ((lambda^2*P_T)/(4*pi)^3)*(0.5*c*h)*P_r_si_surf;
     P_r_si_surf(P_r_si_surf<0) = 0;
     P_t_full_si_surf(ii,:) = P_r_si_surf;
     
