@@ -209,7 +209,7 @@ N = length(Z);
 M = length(t);
 Lfft = N + M - 1;
 
-z0_ref = Z0 + find(t==0) - 1;
+z0_ref = Z0 + find(t==0);
 start_win = z0_ref - (find(t==0) - 1);
 end_win   = start_win + M - 1;
         
