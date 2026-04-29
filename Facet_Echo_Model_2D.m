@@ -63,7 +63,7 @@ delta_x = v/prf; % distance between coherent pulses in synthetic aperture, m
 
 delta_x_dopp = (h*prf*c)/(2*N_b*v*f_c); % along-track doppler-beam limited footprint diameter, m
 delta_x_pl = 2*sqrt(c*(h/((Re+h)/Re))*(1/bandwidth)); % across-track pulse-limited footprint diameter, m
-beam_div = 1.1992*pi/180; % across-track CS2 beam divergence
+beam_div = gamma2*(2*sqrt(log(2))); % across-track CS2 beam divergence
 delta_x_bl = 2*h*tan(beam_div/2); % across-track beam-limited footprint diameter, m
 % A_pl = pi*(delta_x_pl/2)^2; % area of each range ring (after waveform peak), m
 
